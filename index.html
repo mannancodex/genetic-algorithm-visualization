@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptive NSGA-II — Cloud Task Scheduling Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
+<style>
+/* ── Design tokens ────────────────────────────────────────────── */
+:root{
+  /* Light theme with dark background */
+  --bg:#0F0F10;
+  --surface:#1A1B1C;
+  --surface-tint:#222324;
+  --surface-hi:#2A2B2C;
+  --border:#2E2F30;
+  --border-hi:#404142;
+  --text:#E8EAED;
+  --text-dim:#9AA0A6;
+  --text-faint:#5F6368;
+
+  /* Objective colours — used only for simulation data */
+  --blue:#4285F4;
+  --red:#C5382C;
+  --yellow:#E8A800;
+  --green:#2E9447;
+
+  --blue-tint:rgba(66,133,244,.12);
+  --red-tint:rgba(197,56,44,.12);
+  --yellow-tint:rgba(232,168,0,.12);
+  --green-tint:rgba(46,148,71,.12);
+
+  --radius:14px;
+  --radius-sm:8px;
+  --shadow:0 2px 8px rgba(0,0,0,.55), 0 1px 2px rgba(0,0,0,.35);
+  --font:'IM Fell English',Georgia,'Times New Roman',Times,serif;
+  --font-sc:'IM Fell English SC',Georgia,serif;
+  --mono:'Courier New',Courier,monospace;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--font);}
+body{font-size:14.5px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+.num{font-family:var(--mono);}
+::-webkit-scrollbar{width:7px;height:7px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:6px;}
+
+/* ── Top rule strip (single colour, not multi) ────────────────── */
+.topstrip{height:3px;background:var(--border-hi);}
+
+/* ── Shell layout ─────────────────────────────────────────────── */
+.shell{display:grid;grid-template-columns:296px 1fr;grid-template-rows:58px 1fr;
+  grid-template-areas:"top top" "side main";min-height:100vh;}
+
+/* ── Top bar ──────────────────────────────────────────────────── */
+.top{grid-area:top;display:flex;align-items:center;justify-content:space-between;
+  padding:0 22px;background:var(--surface);border-bottom:1px solid var(--border);}
+.brand{display:flex;align-items:center;gap:14px;}
+.brand-mark{
+  width:34px;height:34px;border-radius:8px;background:var(--surface-tint);
+  border:1px solid var(--border-hi);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text);font-size:17px;font-weight:900;font-family:var(--font-sc);
+  letter-spacing:.02em;
+}
+.brand-text b{font-family:var(--font-sc);font-weight:normal;font-size:17px;letter-spacing:.03em;color:var(--text);}
+.brand-text small{display:block;font-size:11px;color:var(--text-dim);margin-top:1px;font-style:italic;}
+.top-tags{display:flex;gap:8px;align-items:center;}
+.tag{font-size:11px;font-family:var(--mono);padding:5px 11px;border-radius:18px;
+  background:var(--surface-tint);color:var(--text-dim);border:1px solid var(--border);}
+
+/* ── Sidebar ──────────────────────────────────────────────────── */
+.side{grid-area:side;background:var(--surface);border-right:1px solid var(--border);
+  padding:16px 14px 80px;overflow-y:auto;}
+.main{grid-area:main;padding:18px 20px 90px;overflow-y:auto;}
+
+/* ── Generic card / panel ─────────────────────────────────────── */
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:16px 18px 18px;display:flex;flex-direction:column;}
+.panel h3{margin:0 0 3px;font-family:var(--font-sc);font-weight:normal;font-size:13.5px;
+  letter-spacing:.04em;display:flex;align-items:center;gap:8px;color:var(--text);}
+.panel .sub{font-size:11.5px;color:var(--text-dim);margin-bottom:12px;font-style:italic;}
+
+.sidecard{padding:14px;margin-bottom:12px;border-radius:var(--radius);
+  background:var(--surface);border:1px solid var(--border);}
+.sidecard h4{margin:0 0 12px;font-size:10px;font-family:var(--font-sc);font-weight:normal;
+  color:var(--text-dim);text-transform:uppercase;letter-spacing:.1em;}
+
+.field{margin-bottom:12px;}
+.field:last-child{margin-bottom:0;}
+.field label{display:flex;justify-content:space-between;font-size:12px;
+  color:var(--text-dim);margin-bottom:5px;font-style:italic;}
+.field label b{color:var(--text);font-family:var(--mono);font-style:normal;font-weight:normal;}
+input[type=range]{width:100%;accent-color:var(--blue);height:3px;}
+input[type=range]:disabled{opacity:.35;}
+
+.run-btn{width:100%;background:var(--blue);color:#fff;border:none;border-radius:22px;
+  padding:11px;font-weight:normal;font-size:13px;cursor:pointer;
+  font-family:var(--font-sc);letter-spacing:.06em;
+  transition:filter .12s, box-shadow .12s;
+  box-shadow:0 2px 10px rgba(66,133,244,.3);}
+.run-btn:hover{filter:brightness(1.1);box-shadow:0 3px 14px rgba(66,133,244,.45);}
+.run-btn:active{filter:brightness(.9);}
+
+.export-btn{width:100%;background:var(--surface-tint);color:var(--text-dim);
+  border:1px solid var(--border-hi);border-radius:20px;padding:9px;
+  font-size:11px;font-weight:normal;cursor:pointer;font-family:var(--font-sc);
+  letter-spacing:.05em;margin-top:7px;}
+.export-btn:hover{color:var(--text);border-color:var(--text-faint);}
+.export-btn:disabled{opacity:.35;cursor:default;}
+
+.seedbtn{width:100%;background:var(--surface-tint);border:1px solid var(--border);
+  color:var(--text-dim);border-radius:18px;padding:8px;font-size:11px;
+  cursor:pointer;font-family:var(--font);}
+.seedbtn:hover{color:var(--text);border-color:var(--border-hi);}
+.seedbox{flex:1;min-width:0;font-family:var(--mono);font-size:12px;padding:6px 8px;
+  border:1px solid var(--border);border-radius:7px;background:var(--surface-tint);color:var(--text);}
+.filein{width:100%;font-size:11px;color:var(--text-dim);margin-top:2px;}
+.filein::file-selector-button{font-family:var(--font-sc);font-size:10px;
+  border:1px solid var(--border);background:var(--surface);color:var(--text-dim);
+  border-radius:12px;padding:5px 10px;margin-right:7px;cursor:pointer;}
+.csv-status{font-size:10.5px;color:var(--text-faint);margin-top:4px;}
+.csv-status.ok{color:var(--green);}
+.csv-status.err{color:var(--red);}
+.csv-help{font-size:10px;color:var(--text-faint);margin-top:8px;line-height:1.6;font-style:italic;}
+.csv-help b{color:var(--text-dim);font-style:normal;}
+
+/* ── Legend dots / squares ────────────────────────────────────── */
+.legend-row{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-dim);margin-top:7px;}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;}
+.sq{width:9px;height:9px;border-radius:2px;flex:none;}
+
+/* ── Stats strip ──────────────────────────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;}
+.stat{padding:13px 15px;border-radius:var(--radius);border:1px solid var(--border);}
+.stat .k{font-size:9.5px;font-family:var(--font-sc);letter-spacing:.08em;
+  color:var(--text-dim);margin-bottom:7px;}
+.stat .v{font-family:var(--mono);font-size:20px;letter-spacing:-.01em;}
+.stat .v small{font-size:11px;opacity:.65;margin-left:2px;font-family:var(--font);}
+.stat.gen{background:var(--surface-tint);} .stat.gen .v{color:var(--text);}
+.stat.mk{background:var(--blue-tint);border-color:rgba(66,133,244,.2);}  .stat.mk .k,.stat.mk .v{color:var(--blue);}
+.stat.ct{background:var(--red-tint);border-color:rgba(197,56,44,.2);}   .stat.ct .k,.stat.ct .v{color:var(--red);}
+.stat.en{background:var(--yellow-tint);border-color:rgba(232,168,0,.2);} .stat.en .k,.stat.en .v{color:var(--yellow);}
+.stat.pf{background:var(--green-tint);border-color:rgba(46,148,71,.2);}  .stat.pf .k,.stat.pf .v{color:var(--green);}
+
+/* ── Grid layouts ─────────────────────────────────────────────── */
+.grid2{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-bottom:14px;}
+.grid2b{display:grid;grid-template-columns:.85fr 1.15fr;gap:14px;}
+
+/* ── Axis selects / tooltips ──────────────────────────────────── */
+.axis-row{display:flex;gap:8px;align-items:center;margin-bottom:9px;
+  font-size:11.5px;color:var(--text-dim);}
+select{font-family:var(--font);font-size:11.5px;border:1px solid var(--border);
+  background:var(--surface-tint);color:var(--text);border-radius:6px;padding:4px 7px;}
+.tooltip{position:absolute;pointer-events:none;background:#0F0F10;color:var(--text);
+  font-size:11px;padding:7px 10px;border-radius:7px;font-family:var(--mono);
+  opacity:0;transition:opacity .08s;z-index:20;white-space:nowrap;
+  border:1px solid var(--border-hi);box-shadow:var(--shadow);}
+
+/* ── Playback bar ─────────────────────────────────────────────── */
+.playbar{position:fixed;left:296px;right:0;bottom:0;
+  background:var(--surface);border-top:1px solid var(--border);
+  padding:11px 20px;display:none;align-items:center;gap:12px;z-index:30;}
+.pbtn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);
+  background:var(--surface-tint);color:var(--text);display:flex;align-items:center;
+  justify-content:center;cursor:pointer;flex:none;font-size:12px;}
+.pbtn:hover{border-color:var(--blue);color:var(--blue);}
+.pbtn.play{width:38px;height:38px;background:var(--blue);color:#fff;border:none;
+  box-shadow:0 2px 8px rgba(66,133,244,.35);}
+.pbtn.play:hover{filter:brightness(1.1);color:#fff;}
+.playbar input[type=range]{flex:1;}
+.gentext{font-family:var(--mono);font-size:12px;color:var(--text);white-space:nowrap;min-width:92px;}
+.speedsel{font-size:11px;}
+
+/* ── Empty hint ───────────────────────────────────────────────── */
+.empty-hint{color:var(--text-dim);font-size:14px;padding:80px 20px;
+  text-align:center;max-width:520px;margin:0 auto;font-style:italic;line-height:1.8;}
+.empty-hint b{font-family:var(--font-sc);font-style:normal;color:var(--text);}
+
+/* ── Badges ───────────────────────────────────────────────────── */
+.badge{display:inline-block;font-size:9.5px;padding:2px 8px;border-radius:16px;
+  background:var(--surface-tint);color:var(--text-dim);border:1px solid var(--border);
+  font-family:var(--mono);font-style:normal;}
+
+/* ── SVG text ─────────────────────────────────────────────────── */
+svg text{font-family:var(--font);}
+.crosshair{stroke:var(--border-hi);stroke-dasharray:2,3;}
+
+/* ── Genetic Operators panel ──────────────────────────────────── */
+.ops-legend{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;}
+.ops-note{font-size:12.5px;color:var(--text-dim);padding:14px;
+  background:var(--surface-tint);border-radius:var(--radius-sm);font-style:italic;}
+.ops-table-wrap{max-height:540px;overflow:auto;border:1px solid var(--border);
+  border-radius:var(--radius-sm);}
+
+table.ops-table{border-collapse:collapse;width:100%;}
+table.ops-table thead th{
+  position:sticky;top:0;background:var(--surface-tint);text-align:left;
+  font-family:var(--font-sc);font-size:10px;letter-spacing:.07em;
+  color:var(--text-dim);padding:8px 10px;border-bottom:1px solid var(--border);z-index:2;
+  font-weight:normal;
+}
+table.ops-table tbody td{
+  padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top;
+}
+table.ops-table tbody tr:hover{background:var(--surface-tint);}
+
+/* Pair number */
+.pairno{font-family:var(--mono);font-size:11px;color:var(--text-faint);}
+
+/* Gene header chip */
+.pchip{font-size:10px;font-family:var(--mono);color:var(--text-dim);margin-bottom:5px;}
+
+/* ── Gene bar / genome visualization ─────────────────────────── */
+.genome-wrap{display:flex;flex-direction:column;gap:6px;}
+
+/* Compact colour bar (one pixel per gene) */
+.genome-bar{display:flex;gap:1px;flex-wrap:nowrap;margin-bottom:3px;}
+.gene-seg{width:7px;height:10px;border-radius:1.5px;flex:none;position:relative;}
+.gene-seg.mut{box-shadow:0 0 0 1.5px var(--red) inset;}
+
+/* Numerical table (shows actual VM indices) */
+.gene-nums{display:flex;flex-wrap:wrap;gap:2px 3px;margin-top:2px;}
+.gnum{
+  font-family:var(--mono);font-size:9px;min-width:18px;height:17px;
+  border-radius:3px;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);background:var(--surface-tint);color:var(--text-dim);
+  padding:0 2px;
+}
+.gnum.mut{border-color:var(--red);color:var(--red);background:var(--red-tint);}
+.gnum.from-b{border-color:var(--blue);color:var(--blue);background:var(--blue-tint);}
+
+/* crossover mask numbers */
+.mask-nums{display:flex;flex-wrap:wrap;gap:2px 3px;margin-top:2px;}
+.mnum{
+  font-family:var(--mono);font-size:9px;min-width:18px;height:17px;
+  border-radius:3px;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);padding:0 2px;
+}
+.mnum.from-a{background:rgba(46,148,71,.15);border-color:rgba(46,148,71,.4);color:var(--green);}
+.mnum.from-b{background:var(--blue-tint);border-color:rgba(66,133,244,.4);color:var(--blue);}
+
+/* Objective value cells in ops table */
+.obj-vals{display:flex;flex-direction:column;gap:2px;margin-top:5px;}
+.oval{font-family:var(--mono);font-size:9px;color:var(--text-dim);}
+.oval span{display:inline-block;width:12px;height:7px;border-radius:2px;vertical-align:middle;margin-right:3px;}
+
+.opscount{font-size:11px;color:var(--text-faint);margin-top:8px;font-style:italic;}
+</style>
+</head>
+<body>
+<div class="topstrip"></div>
+<div class="shell">
+
+  <!-- ── Top bar ── -->
+  <div class="top">
+    <div class="brand">
+      <div class="brand-mark">⇄</div>
+      <div class="brand-text">
+        <b id="brandTitle">NSGA-II Scheduler</b>
+        <small>Multi-objective cloud task scheduling — makespan · cost · energy · SLA</small>
+      </div>
+    </div>
+    <div class="top-tags">
+      <div class="tag" id="tagSeed">Seed 1337</div>
+      <div class="tag" id="tagStatus">Not run</div>
+    </div>
+  </div>
+
+  <!-- ── Sidebar ── -->
+  <div class="side">
+    <div class="sidecard">
+      <h4>Cloud Environment</h4>
+      <div class="field"><label>Tasks <b id="lblTasks">24</b></label>
+        <input type="range" id="numTasks" min="8" max="60" value="24"></div>
+      <div class="field"><label>Virtual Machines <b id="lblVMs">6</b></label>
+        <input type="range" id="numVMs" min="2" max="12" value="6"></div>
+      <div class="field">
+        <label>Seed</label>
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="seedInput" value="1337" class="seedbox">
+          <button class="seedbtn" id="btnApplySeed" style="width:auto;padding:7px 11px;">Apply</button>
+        </div>
+      </div>
+      <button class="seedbtn" id="btnSeed">↻ Regenerate workload (new seed)</button>
+    </div>
+
+    <div class="sidecard">
+      <h4>Custom Workload (CSV) <span class="badge" id="customBadge" style="display:none;">active</span></h4>
+      <div class="field">
+        <label>Tasks CSV</label>
+        <input type="file" id="fileTasks" accept=".csv" class="filein">
+        <div class="csv-status" id="statusTasks">Using synthetic tasks</div>
+      </div>
+      <div class="field">
+        <label>VMs CSV</label>
+        <input type="file" id="fileVMs" accept=".csv" class="filein">
+        <div class="csv-status" id="statusVMs">Using synthetic VMs</div>
+      </div>
+      <button class="seedbtn" id="btnClearCustom">✕ Clear custom data</button>
+      <div class="csv-help">
+        Tasks CSV: <b>length</b> (MI, required), <b>deadline</b> (s, optional)<br>
+        VMs CSV: <b>mips</b> (required), <b>cost_per_hour</b>, <b>idle_power</b>, <b>max_power</b>
+      </div>
+    </div>
+
+    <div class="sidecard">
+      <h4>NSGA-II Parameters</h4>
+      <div class="field"><label>Population size <b id="lblPop">40</b></label>
+        <input type="range" id="popSize" min="10" max="100" value="40" step="2"></div>
+      <div class="field"><label>Generations <b id="lblGen">50</b></label>
+        <input type="range" id="numGen" min="5" max="150" value="50"></div>
+      <div class="field"><label>Crossover rate <b id="lblCx">0.90</b></label>
+        <input type="range" id="cxRate" min="0" max="100" value="90"></div>
+      <div class="field"><label>Mutation rate <b id="lblMut">0.15</b></label>
+        <input type="range" id="mutRate" min="1" max="60" value="15"></div>
+    </div>
+
+    <button class="run-btn" id="btnRun">▶  Run Simulation</button>
+    <button class="export-btn" id="btnExport" disabled>⬇ Export History JSON (for Python)</button>
+
+    <div class="sidecard" style="margin-top:12px;">
+      <h4>Objective Colour Key</h4>
+      <div class="legend-row"><span class="dot" style="background:var(--blue)"></span>Makespan (s) — schedule length</div>
+      <div class="legend-row"><span class="dot" style="background:var(--red)"></span>Cost ($) — VM-hour billing</div>
+      <div class="legend-row"><span class="dot" style="background:var(--yellow)"></span>Energy (Wh) — active + idle draw</div>
+      <div class="legend-row"><span class="dot" style="background:var(--green)"></span>SLA violation (s) — deadline overrun</div>
+    </div>
+
+    <div class="sidecard" style="margin-top:12px;">
+      <h4>VM Colour Key</h4>
+      <div id="vmKey" style="font-size:12px;color:var(--text-dim);font-style:italic;">
+        Run the simulation to generate a workload.</div>
+    </div>
+
+    <div class="sidecard" style="margin-top:12px;">
+      <h4>Python Visualiser</h4>
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.7;font-style:italic;">
+        Export the history JSON, then run:<br>
+        <code style="font-style:normal;font-family:var(--mono);font-size:10px;
+          background:var(--surface-tint);padding:1px 4px;border-radius:3px;
+          border:1px solid var(--border);">python visualize_pareto.py results.json</code><br>
+        Produces 3-D Pareto plots, convergence charts, parallel coordinates, and an
+        interactive Plotly HTML (requires <code style="font-style:normal;
+          font-family:var(--mono);font-size:10px;">pip install matplotlib numpy plotly</code>).
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Main content ── -->
+  <div class="main" id="mainArea">
+    <div class="empty-hint" id="emptyHint">
+      Configure the workload and algorithm parameters on the left, then press
+      <b>Run Simulation</b>.<br><br>
+      You will be able to step through every generation — including the actual
+      selection, crossover and mutation events that produced each offspring.
+    </div>
+
+    <div id="content" style="display:none;">
+      <div class="stats" id="statsRow"></div>
+
+      <div class="grid2">
+        <div class="panel" style="height:370px;">
+          <h3>Pareto Front Explorer <span class="badge" id="frontBadge">rank 0</span></h3>
+          <div class="sub">Non-dominated solutions at current generation — click a point to inspect its schedule</div>
+          <div class="axis-row">
+            X <select id="selX"></select> &nbsp;Y <select id="selY"></select>
+          </div>
+          <div style="position:relative;flex:1;">
+            <svg id="svgPareto" width="100%" height="100%"></svg>
+            <div class="tooltip" id="ttPareto"></div>
+          </div>
+        </div>
+        <div class="panel" style="height:370px;">
+          <h3>Parallel Coordinates</h3>
+          <div class="sub">All four objectives, normalised — bold lines are Pareto-optimal</div>
+          <div style="position:relative;flex:1;">
+            <svg id="svgParallel" width="100%" height="100%"></svg>
+            <div class="tooltip" id="ttParallel"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid2b">
+        <div class="panel" style="height:320px;">
+          <h3>Convergence</h3>
+          <div class="sub">Best value per objective across generations (normalised, lower = better)</div>
+          <div style="position:relative;flex:1;">
+            <svg id="svgConverge" width="100%" height="100%"></svg>
+          </div>
+        </div>
+        <div class="panel" style="height:320px;">
+          <h3>VM Schedule <span class="badge" id="schedBadge">best compromise</span></h3>
+          <div class="sub">Task → VM assignment timeline for the selected solution</div>
+          <div style="position:relative;flex:1;">
+            <svg id="svgGantt" width="100%" height="100%"></svg>
+            <div class="tooltip" id="ttGantt"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Genetic Operators panel -->
+      <div class="panel" style="margin-top:14px;">
+        <h3>
+          Genetic Operators — Selection → Crossover → Mutation
+          <span class="badge" id="opsBadge">gen 0</span>
+        </h3>
+        <div class="sub">
+          Every parent pair sampled to breed generation <span id="opsGenLabel">0</span>.
+          Each cell shows the actual VM-index digits for each gene, with a compact colour bar above.
+          Green-outlined numbers = inherited from Parent A; blue-outlined = from Parent B; red = mutated.
+        </div>
+        <div class="ops-legend">
+          <div class="legend-row"><span class="sq" style="background:rgba(46,148,71,.25);border:1px solid var(--green);"></span>Gene from Parent A</div>
+          <div class="legend-row"><span class="sq" style="background:var(--blue-tint);border:1px solid var(--blue);"></span>Gene from Parent B</div>
+          <div class="legend-row"><span class="sq" style="background:var(--red-tint);border:1px solid var(--red);"></span>Mutated gene</div>
+        </div>
+        <div id="opsArea"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Playback bar -->
+<div class="playbar" id="playbar">
+  <button class="pbtn" id="btnReset" title="Reset to gen 0">⏮</button>
+  <button class="pbtn" id="btnStepBack" title="Step back">◀</button>
+  <button class="pbtn play" id="btnPlay" title="Play / Pause">▶</button>
+  <button class="pbtn" id="btnStepFwd" title="Step forward">▶|</button>
+  <input type="range" id="genSlider" min="0" max="0" value="0">
+  <span class="gentext" id="genText">Gen 0 / 0</span>
+  <select class="speedsel" id="speedSel">
+    <option value="700">Slow</option>
+    <option value="350" selected>Medium</option>
+    <option value="120">Fast</option>
+  </select>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ── Brand title (plain, no multi-colour) ───────────────────── */
+document.getElementById('brandTitle').innerHTML =
+  '<span style="font-family:var(--font-sc);letter-spacing:.04em;">NSGA-II Cloud Scheduler</span>';
+
+/* ── RNG ────────────────────────────────────────────────────── */
+let SEED = 1337;
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+let rnd = mulberry32(SEED);
+function ri(a,b){return Math.floor(rnd()*(b-a+1))+a;}
+function rf(a,b){return rnd()*(b-a)+a;}
+
+/* ── Problem model ──────────────────────────────────────────── */
+let PROBLEM = null;
+let CUSTOM_TASKS = null;
+let CUSTOM_VMS   = null;
+
+function buildProblem(){
+  rnd = mulberry32(SEED);
+  let vms;
+  if(CUSTOM_VMS && CUSTOM_VMS.length){
+    vms = CUSTOM_VMS.map((v,j)=>({
+      id:j, mips:v.mips,
+      costPerSec: v.costPerHour!=null ? v.costPerHour/3600 : rf(0.00002,0.00009)*(v.mips/1000),
+      idlePower: v.idlePower!=null ? v.idlePower : ri(60,110),
+      maxPower: v.maxPower!=null ? v.maxPower : ri(150,260)
+    }));
+  } else {
+    const numVMs=+$('numVMs').value;
+    vms=[];
+    for(let j=0;j<numVMs;j++){
+      const mips = ri(500,2000);
+      vms.push({ id:j, mips, costPerSec: rf(0.00002,0.00009)*(mips/1000), idlePower: ri(60,110), maxPower: ri(150,260) });
+    }
+  }
+  const avgMips = vms.reduce((s,v)=>s+v.mips,0)/vms.length;
+  let tasks;
+  if(CUSTOM_TASKS && CUSTOM_TASKS.length){
+    tasks = CUSTOM_TASKS.map((t,i)=>({
+      id:i, length:t.length,
+      deadline: t.deadline!=null ? t.deadline : (t.length/avgMips)*rf(1.5,2.4)
+    }));
+  } else {
+    const numTasks=+$('numTasks').value;
+    tasks=[];
+    for(let i=0;i<numTasks;i++){
+      const length = ri(600,4200);
+      const baseExec = length/avgMips;
+      tasks.push({id:i, length, deadline: baseExec*rf(1.5,2.4)});
+    }
+  }
+  return {tasks, vms};
+}
+
+/* ── CSV parsing ────────────────────────────────────────────── */
+function parseCSV(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
+  if(lines.length<2) return {headers:[], rows:[]};
+  const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+  const rows = lines.slice(1).map(line=>{
+    const cells = line.split(',').map(c=>c.trim());
+    const row={};
+    headers.forEach((h,i)=>{ const n=parseFloat(cells[i]); row[h] = isNaN(n) ? cells[i] : n; });
+    return row;
+  });
+  return {headers, rows};
+}
+function loadTasksCSV(text){
+  const {rows} = parseCSV(text);
+  return rows.map(r=>({length:r.length, deadline: (r.deadline!=null && r.deadline!=='') ? r.deadline : null}))
+             .filter(t=> typeof t.length==='number' && t.length>0);
+}
+function loadVMsCSV(text){
+  const {rows} = parseCSV(text);
+  return rows.map(r=>({
+    mips: r.mips,
+    costPerHour: (r.cost_per_hour!=null && r.cost_per_hour!=='') ? r.cost_per_hour : null,
+    idlePower:   (r.idle_power!=null   && r.idle_power!=='')     ? r.idle_power   : null,
+    maxPower:    (r.max_power!=null    && r.max_power!=='')      ? r.max_power    : null
+  })).filter(v=> typeof v.mips==='number' && v.mips>0);
+}
+
+/* ── Objectives ─────────────────────────────────────────────── */
+function evaluate(assign, problem){
+  const {tasks, vms} = problem;
+  const perVM = vms.map(()=>[]);
+  assign.forEach((v,ti)=>perVM[v].push(ti));
+  const completion = new Array(vms.length).fill(0);
+  let slaViol = 0;
+  for(let j=0;j<vms.length;j++){
+    let t=0;
+    for(const ti of perVM[j]){
+      t += tasks[ti].length / vms[j].mips;
+      if(t > tasks[ti].deadline) slaViol += (t - tasks[ti].deadline);
+    }
+    completion[j]=t;
+  }
+  const makespan = Math.max(0,...completion);
+  let cost=0, energy=0;
+  for(let j=0;j<vms.length;j++){
+    cost += completion[j]*3600*vms[j].costPerSec;
+    const idleT = Math.max(0, makespan-completion[j]);
+    energy += (vms[j].maxPower*completion[j] + vms[j].idlePower*idleT)/3600;
+  }
+  return [makespan, cost, energy, slaViol];
+}
+
+/* ── NSGA-II core ───────────────────────────────────────────── */
+function dominates(a,b){
+  let better=false;
+  for(let k=0;k<4;k++){
+    if(a[k] > b[k]+1e-9) return false;
+    if(a[k] < b[k]-1e-9) better=true;
+  }
+  return better;
+}
+function fastNonDominatedSort(objs){
+  const n=objs.length;
+  const S=Array.from({length:n},()=>[]);
+  const domCount=new Array(n).fill(0);
+  const rank=new Array(n).fill(0);
+  const fronts=[[]];
+  for(let p=0;p<n;p++){
+    for(let q=0;q<n;q++){
+      if(p===q) continue;
+      if(dominates(objs[p],objs[q])) S[p].push(q);
+      else if(dominates(objs[q],objs[p])) domCount[p]++;
+    }
+    if(domCount[p]===0){rank[p]=0; fronts[0].push(p);}
+  }
+  let i=0;
+  while(fronts[i].length>0){
+    const next=[];
+    for(const p of fronts[i]){ for(const q of S[p]){ domCount[q]--; if(domCount[q]===0){rank[q]=i+1; next.push(q);} } }
+    i++; fronts.push(next);
+  }
+  fronts.pop();
+  return {fronts, rank};
+}
+function crowdingDistance(front, objs){
+  const dist={};
+  front.forEach(i=>dist[i]=0);
+  for(let k=0;k<4;k++){
+    const sorted=[...front].sort((a,b)=>objs[a][k]-objs[b][k]);
+    const min=objs[sorted[0]][k], max=objs[sorted[sorted.length-1]][k];
+    dist[sorted[0]]=Infinity; dist[sorted[sorted.length-1]]=Infinity;
+    const range=(max-min)||1;
+    for(let m=1;m<sorted.length-1;m++){
+      dist[sorted[m]] += (objs[sorted[m+1]][k]-objs[sorted[m-1]][k])/range;
+    }
+  }
+  return dist;
+}
+function tournament(pop, rank, dist){
+  const a=ri(0,pop.length-1), b=ri(0,pop.length-1);
+  if(rank[a]!==rank[b]) return rank[a]<rank[b]? a:b;
+  return (dist[a]||0) > (dist[b]||0) ? a:b;
+}
+function crossover(p1,p2,rate){
+  const c1=p1.slice(), c2=p2.slice();
+  const mask=new Array(p1.length).fill(false);
+  if(rnd() < rate){
+    for(let i=0;i<p1.length;i++){
+      if(rnd()<0.5){ mask[i]=true; const tmp=c1[i]; c1[i]=c2[i]; c2[i]=tmp; }
+    }
+  }
+  return {c1,c2,mask};
+}
+function mutate(ind, rate, numVMs){
+  const m=new Array(ind.length).fill(false);
+  for(let i=0;i<ind.length;i++){ if(rnd()<rate){ ind[i]=ri(0,numVMs-1); m[i]=true; } }
+  return m;
+}
+
+function runNSGA2(problem, popSize, gens, cxRate, mutRate){
+  const numTasks=problem.tasks.length, numVMs=problem.vms.length;
+  let pop=[];
+  for(let i=0;i<popSize;i++){ const ind=[]; for(let t=0;t<numTasks;t++) ind.push(ri(0,numVMs-1)); pop.push(ind); }
+  let objs=pop.map(ind=>evaluate(ind,problem));
+  let {fronts, rank}=fastNonDominatedSort(objs);
+  let distAll={};
+  fronts.forEach(f=>{Object.assign(distAll, crowdingDistance(f,objs));});
+
+  const history=[];
+  function snapshot(g, ops){
+    history.push({
+      gen:g, pop: pop.map(x=>x.slice()), objs: objs.map(o=>o.slice()),
+      rank: rank.slice(), fronts: fronts.map(f=>f.slice()), ops: ops||null
+    });
+  }
+  snapshot(0, null);
+
+  for(let g=1; g<=gens; g++){
+    const offspring=[], ops=[];
+    while(offspring.length < popSize){
+      const i1=tournament(pop, rank, distAll), i2=tournament(pop, rank, distAll);
+      const {c1,c2,mask}=crossover(pop[i1], pop[i2], cxRate);
+      const m1=mutate(c1, mutRate, numVMs), m2=mutate(c2, mutRate, numVMs);
+      ops.push({ pA:i1, pB:i2, rankA:rank[i1], rankB:rank[i2],
+        gA:pop[i1].slice(), gB:pop[i2].slice(), mask,
+        c1:c1.slice(), c2:c2.slice(), m1, m2 });
+      offspring.push(c1); if(offspring.length<popSize) offspring.push(c2);
+    }
+    const combinedPop = pop.concat(offspring);
+    const combinedObjs = combinedPop.map(ind=>evaluate(ind,problem));
+    const sorted = fastNonDominatedSort(combinedObjs);
+    const newPop=[], newObjs=[], newRank=[];
+    let fi=0;
+    while(fi<sorted.fronts.length && newPop.length + sorted.fronts[fi].length <= popSize){
+      const f=sorted.fronts[fi];
+      f.forEach(idx=>{newPop.push(combinedPop[idx]); newObjs.push(combinedObjs[idx]); newRank.push(fi);});
+      fi++;
+    }
+    if(newPop.length < popSize && fi<sorted.fronts.length){
+      const f=sorted.fronts[fi];
+      const cd=crowdingDistance(f, combinedObjs);
+      const remain=[...f].sort((a,b)=>(cd[b]||0)-(cd[a]||0));
+      let need=popSize-newPop.length;
+      for(const idx of remain){ if(need<=0) break; newPop.push(combinedPop[idx]); newObjs.push(combinedObjs[idx]); newRank.push(fi); need--; }
+    }
+    pop=newPop; objs=newObjs;
+    const rs=fastNonDominatedSort(objs);
+    fronts=rs.fronts; rank=rs.rank;
+    distAll={}; fronts.forEach(f=>Object.assign(distAll, crowdingDistance(f,objs)));
+    snapshot(g, ops);
+  }
+  return history;
+}
+
+/* ── App state ──────────────────────────────────────────────── */
+const OBJ_NAMES  = ['Makespan','Cost','Energy','SLA Violation'];
+const OBJ_UNITS  = ['s','$','Wh','s'];
+const OBJ_COLORS = ['var(--blue)','var(--red)','var(--yellow)','var(--green)'];
+const OBJ_HEX    = ['#4285F4','#C5382C','#E8A800','#2E9447'];
+
+/* Tonal VM palette — neutral/professional, not candy rainbow */
+const VM_PALETTE = [
+  '#5B8CDE','#C0463B','#B8880C','#3D9A5C',
+  '#7B5EA7','#2A8FA5','#C07840','#6A8B3B',
+  '#7A5FAF','#A54873','#2F9E8E','#7A6040'
+];
+function vmColor(v){ return VM_PALETTE[v % VM_PALETTE.length]; }
+
+let HISTORY=null, CUR=0, PLAYING=false, PLAYTIMER=null, SELECTED=null;
+let globalMin=[Infinity,Infinity,Infinity,Infinity], globalMax=[-Infinity,-Infinity,-Infinity,-Infinity];
+
+const $=id=>document.getElementById(id);
+function bindRange(id,lbl,fmt){
+  const el=$(id); const upd=()=>$(lbl).textContent=fmt(el.value);
+  el.addEventListener('input',upd); upd();
+}
+bindRange('numTasks','lblTasks',v=>v);
+bindRange('numVMs','lblVMs',v=>v);
+bindRange('popSize','lblPop',v=>v);
+bindRange('numGen','lblGen',v=>v);
+bindRange('cxRate','lblCx',v=>(v/100).toFixed(2));
+bindRange('mutRate','lblMut',v=>(v/100).toFixed(2));
+
+function updateSeedTag(){ $('tagSeed').textContent='Seed '+SEED; $('seedInput').value=SEED; }
+updateSeedTag();
+
+$('btnSeed').addEventListener('click',()=>{ SEED=Math.floor(Math.random()*1e9); updateSeedTag(); $('tagStatus').textContent='Workload regenerated'; });
+$('btnApplySeed').addEventListener('click',()=>{
+  const v=parseInt($('seedInput').value,10);
+  if(!isNaN(v)){ SEED=v; updateSeedTag(); $('tagStatus').textContent='Seed applied — press Run'; }
+  else { $('seedInput').value=SEED; }
+});
+
+function refreshCustomUI(){
+  const hasT = CUSTOM_TASKS && CUSTOM_TASKS.length;
+  const hasV = CUSTOM_VMS && CUSTOM_VMS.length;
+  $('numTasks').disabled = !!hasT;
+  $('numVMs').disabled   = !!hasV;
+  if(hasT) $('lblTasks').textContent = CUSTOM_TASKS.length;
+  if(hasV) $('lblVMs').textContent   = CUSTOM_VMS.length;
+  $('customBadge').style.display = (hasT||hasV) ? 'inline-block' : 'none';
+}
+$('fileTasks').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const parsed = loadTasksCSV(reader.result);
+      if(!parsed.length){ $('statusTasks').textContent='No valid rows (need "length" column).'; $('statusTasks').className='csv-status err'; return; }
+      CUSTOM_TASKS = parsed;
+      $('statusTasks').textContent = `✓ ${parsed.length} tasks loaded from ${f.name}`;
+      $('statusTasks').className='csv-status ok'; refreshCustomUI();
+    }catch(err){ $('statusTasks').textContent='CSV parse error: '+err.message; $('statusTasks').className='csv-status err'; }
+  };
+  reader.readAsText(f);
+});
+$('fileVMs').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const parsed = loadVMsCSV(reader.result);
+      if(!parsed.length){ $('statusVMs').textContent='No valid rows (need "mips" column).'; $('statusVMs').className='csv-status err'; return; }
+      CUSTOM_VMS = parsed;
+      $('statusVMs').textContent = `✓ ${parsed.length} VMs loaded from ${f.name}`;
+      $('statusVMs').className='csv-status ok'; refreshCustomUI();
+    }catch(err){ $('statusVMs').textContent='CSV parse error: '+err.message; $('statusVMs').className='csv-status err'; }
+  };
+  reader.readAsText(f);
+});
+$('btnClearCustom').addEventListener('click',()=>{
+  CUSTOM_TASKS=null; CUSTOM_VMS=null;
+  $('fileTasks').value=''; $('fileVMs').value='';
+  $('statusTasks').textContent='Using synthetic tasks'; $('statusTasks').className='csv-status';
+  $('statusVMs').textContent='Using synthetic VMs';   $('statusVMs').className='csv-status';
+  $('numTasks').disabled=false; $('numVMs').disabled=false; refreshCustomUI();
+});
+
+/* ── Export JSON for Python visualiser ──────────────────────── */
+$('btnExport').addEventListener('click',()=>{
+  if(!HISTORY) return;
+  const payload = {
+    seed: SEED,
+    tasks: PROBLEM.tasks,
+    vms: PROBLEM.vms,
+    history: HISTORY.map(snap=>({
+      gen: snap.gen,
+      objs: snap.objs,
+      fronts: snap.fronts,
+      pop: snap.pop
+    }))
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 1)], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `nsga2_seed${SEED}.json`; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ── Run ────────────────────────────────────────────────────── */
+$('btnRun').addEventListener('click', ()=>{
+  stopPlay();
+  const popSize=+$('popSize').value, numGen=+$('numGen').value;
+  const cxRate=+$('cxRate').value/100, mutRate=+$('mutRate').value/100;
+  PROBLEM = buildProblem();
+  HISTORY = runNSGA2(PROBLEM, popSize, numGen, cxRate, mutRate);
+  computeGlobalRanges();
+  CUR=0; SELECTED=null;
+  $('emptyHint').style.display='none';
+  $('content').style.display='block';
+  $('playbar').style.display='flex';
+  $('tagStatus').textContent='Converged — '+HISTORY.length+' generations';
+  $('genSlider').max = HISTORY.length-1;
+  $('btnExport').disabled = false;
+  populateAxisSelectors();
+  renderVmKey();
+  renderAll();
+});
+
+function renderVmKey(){
+  $('vmKey').innerHTML = PROBLEM.vms.map((vm,j)=>
+    `<div class="legend-row"><span class="dot" style="background:${vmColor(j)}"></span>`+
+    `VM${j} — <span class="num">${vm.mips}</span> MIPS</div>`
+  ).join('');
+}
+function computeGlobalRanges(){
+  globalMin=[Infinity,Infinity,Infinity,Infinity]; globalMax=[-Infinity,-Infinity,-Infinity,-Infinity];
+  HISTORY.forEach(snap=>snap.objs.forEach(o=>{ for(let k=0;k<4;k++){ if(o[k]<globalMin[k])globalMin[k]=o[k]; if(o[k]>globalMax[k])globalMax[k]=o[k]; } }));
+}
+function norm(v,k){ const range=(globalMax[k]-globalMin[k])||1; return (v-globalMin[k])/range; }
+function populateAxisSelectors(){
+  const opts=OBJ_NAMES.map((n,i)=>`<option value="${i}">${n} (${OBJ_UNITS[i]})</option>`).join('');
+  $('selX').innerHTML=opts; $('selY').innerHTML=opts;
+  $('selX').value=0; $('selY').value=1;
+  $('selX').onchange=renderPareto; $('selY').onchange=renderPareto;
+}
+
+/* ── Playback controls ──────────────────────────────────────── */
+$('genSlider').addEventListener('input',e=>{ CUR=+e.target.value; renderAll(); });
+$('btnStepFwd').addEventListener('click',()=>{ if(!HISTORY)return; CUR=Math.min(HISTORY.length-1,CUR+1); renderAll(); });
+$('btnStepBack').addEventListener('click',()=>{ if(!HISTORY)return; CUR=Math.max(0,CUR-1); renderAll(); });
+$('btnReset').addEventListener('click',()=>{ if(!HISTORY)return; stopPlay(); CUR=0; renderAll(); });
+$('btnPlay').addEventListener('click',()=>{ if(!HISTORY)return; PLAYING?stopPlay():startPlay(); });
+$('speedSel').addEventListener('change',()=>{ if(PLAYING){stopPlay();startPlay();} });
+function startPlay(){ PLAYING=true; $('btnPlay').textContent='⏸'; PLAYTIMER=setInterval(()=>{ CUR++; if(CUR>=HISTORY.length){CUR=HISTORY.length-1;stopPlay();} renderAll(); }, +$('speedSel').value); }
+function stopPlay(){ PLAYING=false; $('btnPlay').textContent='▶'; if(PLAYTIMER) clearInterval(PLAYTIMER); PLAYTIMER=null; }
+
+function renderAll(){
+  $('genSlider').value=CUR;
+  $('genText').textContent=`Gen ${CUR} / ${HISTORY.length-1}`;
+  renderStats(); renderPareto(); renderParallel(); renderConverge(); renderGantt(); renderGeneticOps();
+}
+
+/* ── Stats strip ────────────────────────────────────────────── */
+function renderStats(){
+  const snap=HISTORY[CUR];
+  const fi=snap.fronts[0];
+  const bestOf=k=>Math.min(...fi.map(i=>snap.objs[i][k]));
+  $('statsRow').innerHTML = `
+    <div class="stat gen"><div class="k">Generation</div><div class="v num">${CUR}<small>/ ${HISTORY.length-1}</small></div></div>
+    <div class="stat mk"><div class="k">Best Makespan</div><div class="v num">${bestOf(0).toFixed(2)}<small>s</small></div></div>
+    <div class="stat ct"><div class="k">Best Cost</div><div class="v num">${bestOf(1).toFixed(3)}<small>$</small></div></div>
+    <div class="stat en"><div class="k">Best Energy</div><div class="v num">${bestOf(2).toFixed(1)}<small>Wh</small></div></div>
+    <div class="stat pf"><div class="k">Pareto Front</div><div class="v num">${fi.length}<small>/ ${snap.pop.length}</small></div></div>`;
+  $('frontBadge').textContent = `rank 0 · ${fi.length} solutions`;
+}
+
+/* ── SVG helpers ────────────────────────────────────────────── */
+function svgSize(svg){ const r=svg.getBoundingClientRect(); return {w:Math.max(r.width,50), h:Math.max(r.height,50)}; }
+const NS='http://www.w3.org/2000/svg';
+function el(tag,attrs){ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); return e; }
+
+/* ── Pareto Front scatter ───────────────────────────────────── */
+function renderPareto(){
+  const svg=$('svgPareto'); svg.innerHTML='';
+  const {w,h}=svgSize(svg); const pad={l:44,r:14,t:10,b:30};
+  const xk=+$('selX').value, yk=+$('selY').value;
+  const snap=HISTORY[CUR];
+  const xs=snap.objs.map(o=>o[xk]), ys=snap.objs.map(o=>o[yk]);
+  const xmin=Math.min(...xs), xmax=Math.max(...xs), ymin=Math.min(...ys), ymax=Math.max(...ys);
+  const sx=v=>pad.l+(xmax>xmin?(v-xmin)/(xmax-xmin):.5)*(w-pad.l-pad.r);
+  const sy=v=>h-pad.b-(ymax>ymin?(v-ymin)/(ymax-ymin):.5)*(h-pad.t-pad.b);
+
+  svg.appendChild(el('line',{x1:pad.l,y1:h-pad.b,x2:w-pad.r,y2:h-pad.b,stroke:'var(--border)'}));
+  svg.appendChild(el('line',{x1:pad.l,y1:pad.t,x2:pad.l,y2:h-pad.b,stroke:'var(--border)'}));
+  const tx=el('text',{x:(w+pad.l-pad.r)/2,y:h-5,'text-anchor':'middle','font-size':10,fill:'var(--text-dim)'}); tx.textContent=OBJ_NAMES[xk]+' ('+OBJ_UNITS[xk]+')'; svg.appendChild(tx);
+  const ty=el('text',{x:-((h+pad.t-pad.b)/2),y:11,'text-anchor':'middle','font-size':10,fill:'var(--text-dim)',transform:'rotate(-90)'}); ty.textContent=OBJ_NAMES[yk]+' ('+OBJ_UNITS[yk]+')'; svg.appendChild(ty);
+
+  const frontSet=new Set(snap.fronts[0]);
+  const f0pts=snap.fronts[0].map(i=>({x:sx(snap.objs[i][xk]),y:sy(snap.objs[i][yk])})).sort((a,b)=>a.x-b.x);
+  if(f0pts.length>1){
+    const d='M'+f0pts.map(p=>p.x+','+p.y).join(' L');
+    svg.appendChild(el('path',{d,fill:'none',stroke:'var(--blue)','stroke-width':1.4,'stroke-dasharray':'3,3',opacity:.5}));
+  }
+  const tt=$('ttPareto');
+  snap.pop.forEach((ind,i)=>{
+    const cx=sx(snap.objs[i][xk]), cy=sy(snap.objs[i][yk]);
+    const isFront=frontSet.has(i);
+    const c=el('circle',{cx,cy,r:isFront?5.2:3,
+      fill:isFront?OBJ_HEX[xk]:'var(--text-faint)',
+      opacity:isFront?0.9:0.35,
+      stroke:SELECTED===i?'var(--text)':'none','stroke-width':1.8,style:'cursor:pointer'});
+    c.addEventListener('mousemove',()=>{
+      tt.style.opacity=1; tt.style.left=(cx+16)+'px'; tt.style.top=(cy)+'px';
+      tt.innerHTML = OBJ_NAMES.map((n,k)=>`${n}: ${snap.objs[i][k].toFixed(3)}${OBJ_UNITS[k]}`).join('<br>');
+    });
+    c.addEventListener('mouseleave',()=>tt.style.opacity=0);
+    c.addEventListener('click',()=>{ SELECTED=i; renderPareto(); renderGantt(); });
+    svg.appendChild(c);
+  });
+}
+
+/* ── Parallel Coordinates ───────────────────────────────────── */
+function renderParallel(){
+  const svg=$('svgParallel'); svg.innerHTML='';
+  const {w,h}=svgSize(svg); const pad={l:46,r:46,t:16,b:24};
+  const snap=HISTORY[CUR];
+  const xs=[0,1,2,3].map(k=> pad.l + k*(w-pad.l-pad.r)/3 );
+  const frontSet=new Set(snap.fronts[0]);
+  const tt=$('ttParallel');
+
+  [0,1,2,3].forEach((k,i)=>{
+    svg.appendChild(el('line',{x1:xs[i],y1:pad.t,x2:xs[i],y2:h-pad.b,stroke:'var(--border)'}));
+    const lab=el('text',{x:xs[i],y:h-7,'text-anchor':'middle','font-size':10,fill:'var(--text-dim)'}); lab.textContent=OBJ_NAMES[k]; svg.appendChild(lab);
+  });
+  function yFor(k,val){ return h-pad.b - norm(val,k)*(h-pad.t-pad.b); }
+
+  snap.pop.forEach((ind,i)=>{
+    if(frontSet.has(i)) return;
+    const pts=[0,1,2,3].map((k,ci)=>xs[ci]+','+yFor(k,snap.objs[i][k])).join(' L');
+    svg.appendChild(el('path',{d:'M'+pts,fill:'none',stroke:'var(--text-faint)','stroke-width':1,opacity:.2}));
+  });
+  snap.fronts[0].forEach(i=>{
+    const pts=[0,1,2,3].map((k,ci)=>xs[ci]+','+yFor(k,snap.objs[i][k])).join(' L');
+    const p=el('path',{d:'M'+pts,fill:'none',
+      stroke: SELECTED===i?'var(--text)':OBJ_HEX[0],
+      'stroke-width':SELECTED===i?2.6:1.5,opacity:.82,style:'cursor:pointer'});
+    p.addEventListener('mousemove',e=>{ tt.style.opacity=1; tt.style.left=e.offsetX+14+'px'; tt.style.top=e.offsetY+'px';
+      tt.innerHTML=OBJ_NAMES.map((n,k)=>`${n}: ${snap.objs[i][k].toFixed(2)}${OBJ_UNITS[k]}`).join('<br>'); });
+    p.addEventListener('mouseleave',()=>tt.style.opacity=0);
+    p.addEventListener('click',()=>{ SELECTED=i; renderAll(); });
+    svg.appendChild(p);
+  });
+}
+
+/* ── Convergence chart ──────────────────────────────────────── */
+function renderConverge(){
+  const svg=$('svgConverge'); svg.innerHTML='';
+  const {w,h}=svgSize(svg); const pad={l:34,r:14,t:12,b:24};
+  const upto=HISTORY.slice(0,CUR+1);
+  const series=[0,1,2,3].map(k=> upto.map(snap=>{
+    const vals=snap.fronts[0].map(i=>snap.objs[i][k]);
+    return norm(Math.min(...vals),k);
+  }));
+  const n=upto.length;
+  const sx=idx=> pad.l + (n<=1?0:idx/(HISTORY.length-1))*(w-pad.l-pad.r);
+  const sy=v=> h-pad.b - v*(h-pad.t-pad.b);
+
+  for(let g=0;g<=4;g++){
+    const yy=h-pad.b-g/4*(h-pad.t-pad.b);
+    svg.appendChild(el('line',{x1:pad.l,y1:yy,x2:w-pad.r,y2:yy,stroke:'var(--border)','stroke-width':1,opacity:g===0?1:.5}));
+  }
+  svg.appendChild(el('line',{x1:pad.l,y1:pad.t,x2:pad.l,y2:h-pad.b,stroke:'var(--border)'}));
+
+  series.forEach((s,k)=>{
+    if(s.length<1) return;
+    const d='M'+s.map((v,idx)=>sx(idx)+','+sy(v)).join(' L');
+    svg.appendChild(el('path',{d,fill:'none',stroke:OBJ_HEX[k],'stroke-width':2}));
+  });
+  const gx=sx(n-1);
+  svg.appendChild(el('line',{x1:gx,y1:pad.t,x2:gx,y2:h-pad.b,class:'crosshair'}));
+
+  // Small legend
+  [0,1,2,3].forEach((k,i)=>{
+    const lx=w-pad.r-130+i*32;
+    svg.appendChild(el('line',{x1:lx,y1:pad.t+6,x2:lx+14,y2:pad.t+6,stroke:OBJ_HEX[k],'stroke-width':2}));
+    const lt=el('text',{x:lx+16,y:pad.t+9,'font-size':8,fill:'var(--text-dim)'}); lt.textContent=OBJ_NAMES[k][0]; svg.appendChild(lt);
+  });
+}
+
+/* ── Gantt schedule ─────────────────────────────────────────── */
+function bestCompromiseIdx(snap){
+  const f=snap.fronts[0]; let best=f[0], bestScore=Infinity;
+  f.forEach(i=>{ let s=0; for(let k=0;k<4;k++) s+=norm(snap.objs[i][k],k); if(s<bestScore){bestScore=s; best=i;} });
+  return best;
+}
+function renderGantt(){
+  const svg=$('svgGantt'); svg.innerHTML='';
+  const {w,h}=svgSize(svg); const pad={l:60,r:16,t:10,b:26};
+  const snap=HISTORY[CUR];
+  const idx = (SELECTED!==null && snap.fronts[0].includes(SELECTED)) ? SELECTED : bestCompromiseIdx(snap);
+  $('schedBadge').textContent = (SELECTED!==null && snap.fronts[0].includes(SELECTED)) ? 'selected solution' : 'best compromise (auto)';
+  const assign=snap.pop[idx];
+  const {tasks, vms}=PROBLEM;
+  const perVM=vms.map(()=>[]);
+  assign.forEach((v,ti)=>perVM[v].push(ti));
+  const makespan=snap.objs[idx][0]||1;
+  const rowH=(h-pad.t-pad.b)/vms.length;
+  const sx=t=> pad.l + (t/makespan)*(w-pad.l-pad.r);
+  const tt=$('ttGantt');
+
+  vms.forEach((vm,j)=>{
+    const y=pad.t+j*rowH;
+    svg.appendChild(el('line',{x1:pad.l,y1:y+rowH,x2:w-pad.r,y2:y+rowH,stroke:'var(--border)'}));
+    const lab=el('text',{x:pad.l-7,y:y+rowH/2+4,'text-anchor':'end','font-size':10,fill:'var(--text-dim)'}); lab.textContent='VM'+j; svg.appendChild(lab);
+    let t=0;
+    perVM[j].forEach(ti=>{
+      const dur=tasks[ti].length/vm.mips;
+      const x1=sx(t), x2=sx(t+dur);
+      const late = (t+dur) > tasks[ti].deadline;
+      const r=el('rect',{x:x1,y:y+4,width:Math.max(1,x2-x1-1),height:rowH-12,rx:2,
+        fill:vmColor(j),stroke:late?'var(--red)':'none','stroke-width':late?1.5:0,style:'cursor:pointer'});
+      r.addEventListener('mousemove',()=>{ tt.style.opacity=1; tt.style.left=(x1+8)+'px'; tt.style.top=(y-6)+'px';
+        tt.innerHTML=`Task ${ti}<br>finish: ${(t+dur).toFixed(2)}s<br>deadline: ${tasks[ti].deadline.toFixed(2)}s${late?'<br><span style="color:var(--red)">SLA violated</span>':''}`; });
+      r.addEventListener('mouseleave',()=>tt.style.opacity=0);
+      svg.appendChild(r);
+      t+=dur;
+    });
+  });
+  svg.appendChild(el('line',{x1:pad.l,y1:pad.t,x2:pad.l,y2:h-pad.b,stroke:'var(--border)'}));
+  const axl=el('text',{x:(w+pad.l-pad.r)/2,y:h-5,'text-anchor':'middle','font-size':9.5,fill:'var(--text-dim)'}); axl.textContent='time (s) — makespan '+makespan.toFixed(2)+'s'; svg.appendChild(axl);
+}
+
+/* ── Genetic Operators — NUMERIC display ────────────────────── */
+function buildGnumHTML(genes, mutMask, fromBMask){
+  /* colour bar */
+  let bar = '<div class="genome-bar">';
+  genes.forEach((v,i)=>{
+    const mut = mutMask && mutMask[i];
+    bar += `<div class="gene-seg${mut?' mut':''}" style="background:${vmColor(v)}" title="Task ${i} → VM${v}${mut?' (mutated)':''}"></div>`;
+  });
+  bar += '</div>';
+
+  /* number chips */
+  let nums = '<div class="gene-nums">';
+  genes.forEach((v,i)=>{
+    const mut  = mutMask  && mutMask[i];
+    const frB  = fromBMask && fromBMask[i];
+    let cls = 'gnum';
+    if(mut)  cls += ' mut';
+    else if(frB) cls += ' from-b';
+    nums += `<span class="${cls}" title="Task ${i} → VM${v}${mut?' ✕ mutated':''}${frB?' ← Parent B':''}">${v}</span>`;
+  });
+  nums += '</div>';
+  return bar + nums;
+}
+function buildMaskHTML(mask){
+  let bar = '<div class="genome-bar">';
+  mask.forEach((fromB,i)=>{
+    bar += `<div class="gene-seg" style="background:${fromB?'var(--blue)':'var(--green)'}" title="Gene ${i}: from ${fromB?'B':'A'}"></div>`;
+  });
+  bar += '</div>';
+  let nums = '<div class="mask-nums">';
+  mask.forEach((fromB,i)=>{
+    nums += `<span class="mnum ${fromB?'from-b':'from-a'}" title="Gene ${i}: from ${fromB?'Parent B':'Parent A'}">${fromB?'B':'A'}</span>`;
+  });
+  nums += '</div>';
+  return bar + nums;
+}
+
+function renderGeneticOps(){
+  const snap=HISTORY[CUR];
+  $('opsBadge').textContent = 'gen '+CUR;
+  $('opsGenLabel').textContent = CUR;
+  const area=$('opsArea');
+  if(!snap.ops){
+    area.innerHTML = `<div class="ops-note">Generation 0 is the randomly initialised starting population of ${snap.pop.length} chromosomes — no selection, crossover or mutation has been applied yet. Step forward to see the first breeding round.</div>`;
+    return;
+  }
+  const MAXROWS=30;
+  const ops=snap.ops.slice(0,MAXROWS);
+  let rows='';
+  ops.forEach((op,idx)=>{
+    // objective values for parents (if available from previous snapshot)
+    const prevSnap = HISTORY[CUR-1] || null;
+    const objA = prevSnap ? prevSnap.objs[op.pA] : null;
+    const objB = prevSnap ? prevSnap.objs[op.pB] : null;
+
+    const fromBMaskC1 = op.mask;
+    const fromBMaskC2 = op.mask.map(v=>!v);
+
+    rows += `<tr>
+      <td class="pairno" style="white-space:nowrap;">#${idx+1}</td>
+      <td>
+        <div class="pchip">P${op.pA} · rank ${op.rankA}</div>
+        ${buildGnumHTML(op.gA, null, null)}
+        ${objA ? `<div class="obj-vals">
+          ${OBJ_NAMES.map((n,k)=>`<div class="oval"><span style="background:${OBJ_HEX[k]}"></span>${n[0]}: ${objA[k].toFixed(2)}${OBJ_UNITS[k]}</div>`).join('')}
+        </div>` : ''}
+      </td>
+      <td>
+        <div class="pchip">P${op.pB} · rank ${op.rankB}</div>
+        ${buildGnumHTML(op.gB, null, null)}
+        ${objB ? `<div class="obj-vals">
+          ${OBJ_NAMES.map((n,k)=>`<div class="oval"><span style="background:${OBJ_HEX[k]}"></span>${n[0]}: ${objB[k].toFixed(2)}${OBJ_UNITS[k]}</div>`).join('')}
+        </div>` : ''}
+      </td>
+      <td>${buildMaskHTML(op.mask)}</td>
+      <td>
+        <div class="pchip">child 1</div>
+        ${buildGnumHTML(op.c1, op.m1, fromBMaskC1)}
+      </td>
+      <td>
+        <div class="pchip">child 2</div>
+        ${buildGnumHTML(op.c2, op.m2, fromBMaskC2)}
+      </td>
+    </tr>`;
+  });
+  area.innerHTML = `<div class="ops-table-wrap"><table class="ops-table">
+    <thead><tr>
+      <th>Pair</th>
+      <th>Parent A</th>
+      <th>Parent B</th>
+      <th>Crossover Mask</th>
+      <th>Offspring 1</th>
+      <th>Offspring 2</th>
+    </tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    <div class="opscount">Showing ${ops.length} of ${snap.ops.length} breeding pairs this generation.
+      Each digit is a task's VM assignment (0–${PROBLEM.vms.length-1}).
+      Green border = from Parent A · Blue border = from Parent B · Red = mutated by random reassignment.
+    </div>`;
+}
+
+window.addEventListener('resize', ()=>{ if(HISTORY) renderAll(); });
+})();
+</script>
+</body>
+</html>
