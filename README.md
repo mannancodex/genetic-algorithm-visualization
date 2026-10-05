@@ -1,128 +1,25 @@
-# Adaptive NSGA-II — Cloud Task Scheduling Simulator
+# CloudSched – NSGA-II task scheduling for modelled cloud infrastructure
+Run: `pip install -r requirements.txt && cd backend && uvicorn main:app --port 8000` → open http://localhost:8000
+Tests: `python -m pytest tests` (needs internet in the browser for React/Babel CDN scripts).
 
-An interactive, in-browser simulator for cloud task scheduling using NSGA-II
-(Non-dominated Sorting Genetic Algorithm II), optimising four objectives simultaneously:
+**Scope:** optimises a *modelled* VM pool and emits an executable plan; no real cloud API is called. Add a provider adapter that returns `VM` objects to connect AWS/Azure/GCP.
 
-- **Makespan** (s) — total schedule length
-- **Cost** ($) — VM-hour billing
-- **Energy** (Wh) — active + idle power draw
-- **SLA Violation** (s) — total deadline overrun
+## Model (units: MI, MIPS, $/h, W, GB, Mbps)
+Chromosome: per task (VM index, random key). Decoder: ready task with smallest key is placed on its VM at `max(arrival, VM free, dep finish)`; one task per VM at a time, non-preemptive. Infeasible VM genes (cpu/mem/storage/bw) are repaired; cycles and unfittable tasks are rejected (HTTP 422).
+Objectives (minimised): makespan; cost = Σ busy/3600·price; energy = Σ(P_idle·M+(P_max−P_idle)·busy)/3600 Wh (linear power model); 1−utilisation; imbalance = σ/μ of VM busy time; priority-weighted tardiness (soft deadline/QoS).
+NSGA-II: fast non-dominated sort, crowding distance, binary tournament, uniform crossover, mutation, repair, (μ+λ) elitism, optional stagnation stop; seeded RNG. Baseline: DAG-aware Min-Min.
+References used for the design (not a literature survey): Deb et al., IEEE TEVC 6(2):182–197, 2002 (NSGA-II); Braun et al., JPDC 61(6):810–837, 2001 (Min-Min); Topcuoglu et al., IEEE TPDS 13(3):260–274, 2002 (DAG list scheduling).
+API: POST /api/optimize · GET /api/optimization/{id}[/stream|/pareto|/schedule?solution=k|/results] · POST /api/compare · GET /api/sample
 
----
+## Visualization workspace
 
-## Quick Start
+The React frontend is served directly from `frontend/index.html` and now includes a five-step workflow:
+Workload → Cloud Resources → Optimization → Results → Pareto Explorer.
 
-No build step. No dependencies to install. Open `index.html` in any modern
-browser (Chrome, Firefox, Safari, Edge).
+The existing NSGA-II engine remains the optimizer of record. During a run, the backend emits actual stage events over Server-Sent Events at:
 
----
+`GET /api/optimization/{id}/stream`
 
-## Python Visualiser (`visualize_pareto.py`)
+The stream exposes the real population snapshot, parent selection, crossover, mutation, repair, offspring evaluation, non-dominated sorting, crowding distance, next generation, Pareto front, and generation-complete metrics. The UI uses these events for its live population view and Pareto convergence visualization.
 
-After running the simulator, export the history to JSON and generate
-high-quality static and interactive charts:
-
-```bash
-pip install matplotlib numpy plotly
-python visualize_pareto.py results.json --out-dir ./plots
-```
-
-Without a JSON argument the script runs on built-in synthetic demo data:
-
-```bash
-python visualize_pareto.py
-```
-
-### Output files
-
-| File | Description |
-|------|-------------|
-| `01_pareto_3d.png` | 3-D Pareto front (Makespan × Cost × Energy, colour = SLA) |
-| `02_convergence.png` | Best objective value per generation — 4 sub-plots |
-| `03_parallel_coords.png` | Parallel coordinates — all 4 objectives, Pareto lines bold |
-| `04_pareto_evolution.png` | Pareto evolution grid — 6 snapshots across generations |
-| `05_pareto_3d_interactive.html` | Interactive 3-D Plotly chart (requires `plotly`) |
-
----
-
-## Simulator Panels
-
-### Pareto Front Explorer
-Scatter plot of any two objectives. Non-dominated (rank-0) solutions are
-highlighted. Click a point to lock it and inspect its Gantt schedule.
-
-### Parallel Coordinates
-All four objectives simultaneously, normalised to [0, 1]. Bold coloured lines
-are Pareto-optimal; faint lines are dominated solutions.
-
-### Convergence
-Best value per objective on the Pareto front, plotted against generation.
-Normalised so all four curves fit the same axis.
-
-### VM Schedule (Gantt)
-Task → VM assignment timeline for the selected (or auto best-compromise)
-solution. SLA-violating tasks are outlined in red.
-
-### Genetic Operators
-A real, per-generation log of every parent pair produced by tournament
-selection. Each gene shows its actual VM-index digit (0–N), backed by a
-compact colour bar. Number chip border colour indicates provenance:
-
-- **Green border** — inherited from Parent A
-- **Blue border** — inherited from Parent B
-- **Red border / background** — mutated by random reassignment
-
-Parent objective values (Makespan, Cost, Energy, SLA) are shown beneath
-each parent for direct comparison with offspring.
-
----
-
-## Reproducibility
-
-The seed is shown top-right and in the sidebar. Enter any integer and press
-**Apply** to pin it, or press **Regenerate workload** for a fresh random seed.
-Same seed + same parameters = identical run every time.
-
-## Custom Workload (CSV)
-
-Upload your own tasks and/or VMs as CSV files.
-
-**Tasks CSV** (`sample-data/tasks_sample.csv`):
-
-| column | required | meaning |
-|--------|----------|---------|
-| `length` | yes | task length in million instructions (MI) |
-| `deadline` | no | deadline in seconds; auto-computed if omitted |
-
-**VMs CSV** (`sample-data/vms_sample.csv`):
-
-| column | required | meaning |
-|--------|----------|---------|
-| `mips` | yes | processing speed (MI/s) |
-| `cost_per_hour` | no | billing rate $/h; randomised if omitted |
-| `idle_power` | no | idle power in watts; randomised if omitted |
-| `max_power` | no | full-load power in watts; randomised if omitted |
-
----
-
-## Export → Python Visualiser Workflow
-
-1. Configure and run the simulation.
-2. Click **⬇ Export History JSON (for Python)** in the sidebar.
-3. Move the downloaded `nsga2_seed<N>.json` next to `visualize_pareto.py`.
-4. Run `python visualize_pareto.py nsga2_seed<N>.json --out-dir ./plots`.
-5. Open the generated PNG files and the interactive Plotly HTML.
-
----
-
-## File Structure
-
-```
-nsga2-cloud-scheduler/
-├── index.html                  # Complete simulator (HTML + CSS + JS)
-├── visualize_pareto.py         # Python 3-D visualiser
-├── README.md                   # This file
-└── sample-data/
-    ├── tasks_sample.csv
-    └── vms_sample.csv
-```
+Final analytics are available through the existing schedule/compare APIs and include the actual generated Gantt schedule, VM utilization, task distribution, Pareto solutions, generation convergence, and Min-Min baseline comparison.
